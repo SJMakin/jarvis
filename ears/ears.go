@@ -3,111 +3,45 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
+// FileSystem custom file system handler
+type FileSystem struct {
+	fs http.FileSystem
+}
+
+// Open opens file
+func (fs FileSystem) Open(path string) (http.File, error) {
+	f, err := fs.fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := f.Stat()
+	if s.IsDir() {
+		index := strings.TrimSuffix(path, "/") + "/index.html"
+		if _, err := fs.fs.Open(index); err != nil {
+			return nil, err
+		}
+	}
+
+	return f, nil
+}
+
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<!DOCTYPE html>
-		<html>
-		<head>
-			<title>Record and Upload Audio</title>
-		</head>
-		<body>
-			<button id="start-recording-btn">Start Recording</button>
-			<button id="stop-recording-btn" disabled>Stop Recording</button>
-			<button id="upload-recording-btn" disabled>Upload Recording</button>
-		
-			<script>
-				// Global variables
-				let audioCtx;
-				let recorder;
-				let recordedBlob;
-		
-				// Get the buttons
-				let startRecordingBtn = document.getElementById("start-recording-btn");
-				let stopRecordingBtn = document.getElementById("stop-recording-btn");
-				let uploadRecordingBtn = document.getElementById("upload-recording-btn");
-		
-				// Add event listeners to the buttons
-				startRecordingBtn.addEventListener("click", startRecording);
-				stopRecordingBtn.addEventListener("click", stopRecording);
-				uploadRecordingBtn.addEventListener("click", uploadRecording);
-		
-				function startRecording() {
-					// Request access to the user's microphone
-					navigator.mediaDevices.getUserMedia({ audio: true })
-						.then(stream => {
-							// Initialize the audio context
-							audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-				
-							// Create a MediaStreamSource node
-							let source = audioCtx.createMediaStreamSource(stream);
-				
-							// Create a MediaRecorder
-							recorder = new MediaRecorder(stream);
-				
-							// Start recording
-							recorder.start();
-				
-							// Disable the start recording button
-							startRecordingBtn.disabled = true;
-				
-							// Enable the stop recording button
-							stopRecordingBtn.disabled = false;
-						})
-						.catch(error => {
-							console.log(error);
-						});
-				}
-				
-				// Stop recording
-				function stopRecording() {
-					// Stop the recorder
-					recorder.stop();
-			
-					// Disable the stop recording button
-					stopRecordingBtn.disabled = true;
-			
-					// Enable the upload recording button
-					uploadRecordingBtn.disabled = false;
-			
-					// Get the recorded blob
-					recorder.ondataavailable = (e) => {
-						recordedBlob = e.data;
-					}
-				}
-			
-				// Upload recording
-				function uploadRecording() {
-					// Create a FormData object
-					let formData = new FormData();
-			
-					// Add the recorded blob to the form data
-					formData.append("audio", recordedBlob);
-			
-					// POST the form data to the server
-					fetch("/upload", {
-						method: "POST",
-						body: formData
-					})
-					.then(response => response.json())
-					.then(data => {
-						console.log(data);
-					})
-					.catch(error => {
-						console.log(error);
-					});
-				}
-			</script>
-			
-			</body>
-			</html>
-`))
-	})
+
+	directory := "static"
+	port := "16000"
+	fileServer := http.FileServer(FileSystem{http.Dir(directory)})
+	http.Handle("/", http.StripPrefix(strings.TrimRight("/statics/", "/"), fileServer))
 	http.HandleFunc("/upload", uploadHandler)
+	log.Printf("Serving %s on HTTP port: %s\n", directory, port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+
 	http.ListenAndServe(":16000", nil)
 }
 
@@ -120,7 +54,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		out, err := os.Create("audio.mp3")
+		out, err := os.Create("audio.wav")
 		if err != nil {
 			http.Error(w, "Error saving file", http.StatusInternalServerError)
 			return
