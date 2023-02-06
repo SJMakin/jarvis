@@ -34,15 +34,13 @@ func (fs FileSystem) Open(path string) (http.File, error) {
 
 func main() {
 
-	directory := "static"
+	directory := "C:\\Users\\Sam\\source\\go\\jarvis\\ears\\static"
 	port := "16000"
 	fileServer := http.FileServer(FileSystem{http.Dir(directory)})
 	http.Handle("/", http.StripPrefix(strings.TrimRight("/statics/", "/"), fileServer))
 	http.HandleFunc("/upload", uploadHandler)
 	log.Printf("Serving %s on HTTP port: %s\n", directory, port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
-
-	http.ListenAndServe(":16000", nil)
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
